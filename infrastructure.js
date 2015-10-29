@@ -2,11 +2,38 @@ var http      = require('http');
 var httpProxy = require('http-proxy');
 var exec = require('child_process').exec;
 var request = require("request");
+var heartbeats = require('heartbeats');
+var heart = heartbeats.createHeart(1000);
 
-var GREEN = 'http://127.0.0.1:5060';
-var BLUE  = 'http://127.0.0.1:9090';
+var BLUE  = 'http://localhost:9090';
+var GREEN = 'http://localhost:9060';
 
 var TARGET = GREEN;
+
+var options =
+{
+ url: "http://localhost:8082",
+};
+
+heart.createEvent(5, function(heartbeat, last){
+  var req = request.get(options, function (error, res, body) {
+  var code =  res.statusCode;
+  if(code ==500)
+  {
+    console.log(code);
+    console.log("error! Flipping server!")
+    if(TARGET === BLUE){
+      console.log("flipping to green");
+      TARGET = GREEN;
+  }
+    else {
+      console.log("flipping to blue");
+      TARGET = BLUE;
+    }
+  }
+  })
+});
+
 
 var infrastructure =
 {
@@ -20,44 +47,23 @@ var infrastructure =
     {
       proxy.web( req, res, {target: TARGET } );
     });
-    server.listen(8080);
+    server.listen(8082);
+
+
 
     // Launch green slice
-    exec('forever start deploy/blue-www/main.js 9090', function(err, out, code) 
-    {
-      console.log("attempting to launch blue slice");
-      if (err instanceof Error)
-            throw err;
-      if( err )
-      {
-        console.error( err );
-      }
-    });
+    exec('node_modules/forever/bin/forever --watch start deploy/blue-www/main.js 9090');
+    console.log("blue slice");
 
     // Launch blue slice
-    exec('forever start deploy/green-www/main.js 5060', function(err, out, code) 
-    {
-      console.log("attempting to launch green slice");
-      if (err instanceof Error)
-        throw err;
-      if( err )
-      {
-        console.error( err );
-      }
-    });
-
-//setTimeout
-//var options = 
-//{
-//  url: "http://localhost:8080",
-//};
-//request(options, function (error, res, body) {
+    exec('node_modules/forever/bin/forever --watch start deploy/green-www/main.js 9060');
+    console.log("green slice");
 
   },
 
   teardown: function()
   {
-    exec('forever stopall', function()
+    exec('node_modules/forever/bin/forever stopall', function()
     {
       console.log("infrastructure shutdown");
       process.exit();
@@ -71,5 +77,5 @@ infrastructure.setup();
 process.on('exit', function(){infrastructure.teardown();} );
 process.on('SIGINT', function(){infrastructure.teardown();} );
 process.on('uncaughtException', function(err){
-  console.error(err);
+  console.log(err);
   infrastructure.teardown();} );
